@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Resume–Classifier</title>
+  <style>
+    body {
+      font-family: Poppins, sans-serif;
+      background: #f4f6f8;
+      padding: 40px 20px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      background: #fff;
+      padding: 30px 40px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      width: 100%;
+      max-width: 500px;
+    }
+
+    h2 {
+      color: #333;
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    label {
+      font-weight: 500;
+      display: block;
+      margin-top: 15px;
+    }
+
+    input[type=file], input[type=text] {
+      width: 100%;
+      padding: 10px;
+      margin-top: 6px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+      font-size: 14px;
+    }
+
+    button {
+      width: 100%;
+      background: #007BFF;
+      color: white;
+      border: none;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 16px;
+      margin-top: 20px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    button:hover {
+      background: #0056b3;
+    }
+
+    .result {
+      margin-top: 25px;
+      font-size: 16px;
+      color: #222;
+      line-height: 1.5;
+    }
+
+    .error {
+      color: red;
+    }
+
+    .section-title {
+      font-weight: 600;
+      margin-top: 25px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Resume Classifier</h2>
+
+    <form id="matchForm">
+      <div class="section-title">Resume Upload</div>
+      <label for="resume">Upload Resume (PDF):</label>
+      <input type="file" id="resume" accept="application/pdf" required />
+
+      <div class="section-title">Job Details</div>
+      <label for="skills">Skills (comma separated):</label>
+      <input type="text" id="skills" placeholder="Python, Java, CSS, HTML" required />
+
+      <label for="experience">Experience:</label>
+      <input type="text" id="experience" placeholder="e.g. 3 years" />
+
+      <label for="salary">Salary:</label>
+      <input type="text" id="salary" placeholder="e.g. ₹5,00,000" />
+
+      <label for="education">Education:</label>
+      <input type="text" id="education" placeholder="e.g. B.Tech" />
+
+      <button type="submit">Check Match</button>
+    </form>
+
+    <div class="result" id="result"></div>
+  </div>
+
+  <script>
+    document.getElementById("matchForm").addEventListener("submit", async function(e) {
+      e.preventDefault();
+      const resultDiv = document.getElementById("result");
+      resultDiv.innerHTML = "⏳ Calculating match...";
+
+      try {
+        const formData = new FormData();
+        formData.append("resume", document.getElementById("resume").files[0]);
+        formData.append("skills", document.getElementById("skills").value);
+        formData.append("experience", document.getElementById("experience").value);
+        formData.append("salary", document.getElementById("salary").value);
+        formData.append("education", document.getElementById("education").value);
+
+        const res = await fetch("http://127.0.0.1:8000/match_resume_job", {
+          method: "POST",
+          body: formData
+        });
+
+        if (!res.ok) throw new Error(`Server error: ${res.status}`);
+        const data = await res.json();
+
+        resultDiv.innerHTML = `
+          ✅ <strong>Match Score:</strong> ${data.match_score}%<br/>
+          <strong>Skills Matched:</strong> ${data.skills_matched.join(", ") || "None"}<br/>
+          <strong>Parsed Skills from Resume:</strong> ${data.parsed_skills.join(", ") || "None"}<br/>
+          <strong>Parsed Education from Resume:</strong> ${data.parsed_education.join(", ") || "None"}<br/>
+          <em>${data.message}</em>
+        `;
+      } catch (err) {
+        console.error(err);
+        resultDiv.innerHTML = `<span class="error">❌ Error calculating match. Check console for details.</span>`;
+      }
+    });
+  </script>
+</body>
+</html>
