@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Resume–Classifier</title>
+  <title>Resume Classifier</title>
   <style>
     body {
       font-family: Poppins, sans-serif;
@@ -19,7 +19,7 @@
       border-radius: 12px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.1);
       width: 100%;
-      max-width: 500px;
+      max-width: 600px;
     }
 
     h2 {
@@ -65,7 +65,20 @@
       margin-top: 25px;
       font-size: 16px;
       color: #222;
-      line-height: 1.5;
+      line-height: 1.6;
+    }
+
+    .candidate {
+      background: #f9f9f9;
+      border: 1px solid #ddd;
+      padding: 10px 15px;
+      margin-top: 10px;
+      border-radius: 8px;
+    }
+
+    .best {
+      background: #d4edda;
+      border-color: #28a745;
     }
 
     .error {
@@ -87,8 +100,9 @@
 
     <form id="matchForm">
       <div class="section-title">Resume Upload</div>
-      <label for="resume">Upload Resume (PDF):</label>
-      <input type="file" id="resume" accept="application/pdf" required />
+      <label for="resumes">Upload Multiple Resumes (PDF):</label>
+      <input type="file" id="resumeUpload" name="resumes" multiple accept=".pdf,.doc,.docx" />
+
 
       <div class="section-title">Job Details</div>
       <label for="skills">Skills (comma separated):</label>
@@ -103,46 +117,85 @@
       <label for="education">Education:</label>
       <input type="text" id="education" placeholder="e.g. B.Tech" />
 
-      <button type="submit">Check Match</button>
+      <button type="submit">Check Matches</button>
     </form>
 
     <div class="result" id="result"></div>
   </div>
 
   <script>
-    document.getElementById("matchForm").addEventListener("submit", async function(e) {
-      e.preventDefault();
-      const resultDiv = document.getElementById("result");
-      resultDiv.innerHTML = "⏳ Calculating match...";
+    document.getElementById("matchForm").addEventListener("submit", async function (e) {
+  e.preventDefault();
+  const resultDiv = document.getElementById("result");
+  resultDiv.innerHTML = "⏳ Processing multiple resumes... Please wait.";
 
-      try {
-        const formData = new FormData();
-        formData.append("resume", document.getElementById("resume").files[0]);
-        formData.append("skills", document.getElementById("skills").value);
-        formData.append("experience", document.getElementById("experience").value);
-        formData.append("salary", document.getElementById("salary").value);
-        formData.append("education", document.getElementById("education").value);
+  try {
+    const formData = new FormData();
+    const resumes = document.getElementById("resumeUpload").files; // ✅ Fixed id
+    if (resumes.length === 0) {
+      resultDiv.innerHTML = `<span class="error">Please upload at least one resume.</span>`;
+      return;
+    }
 
-        const res = await fetch("http://127.0.0.1:8000/match_resume_job", {
-          method: "POST",
-          body: formData
-        });
+    for (const file of resumes) {
+      formData.append("resumes", file);
+    }
 
-        if (!res.ok) throw new Error(`Server error: ${res.status}`);
-        const data = await res.json();
+    formData.append("skills", document.getElementById("skills").value);
+    formData.append("experience", document.getElementById("experience").value);
+    formData.append("salary", document.getElementById("salary").value);
+    formData.append("education", document.getElementById("education").value);
 
-        resultDiv.innerHTML = `
-          ✅ <strong>Match Score:</strong> ${data.match_score}%<br/>
-          <strong>Skills Matched:</strong> ${data.skills_matched.join(", ") || "None"}<br/>
-          <strong>Parsed Skills from Resume:</strong> ${data.parsed_skills.join(", ") || "None"}<br/>
-          <strong>Parsed Education from Resume:</strong> ${data.parsed_education.join(", ") || "None"}<br/>
-          <em>${data.message}</em>
-        `;
-      } catch (err) {
-        console.error(err);
-        resultDiv.innerHTML = `<span class="error">❌ Error calculating match. Check console for details.</span>`;
-      }
+    const res = await fetch("http://127.0.0.1:8000/match_resumes_job", {
+      method: "POST",
+      body: formData
     });
+
+    if (!res.ok) throw new Error(`Server error: ${res.status}`);
+    const data = await res.json();
+
+    if (data.error) {
+      resultDiv.innerHTML = `<span class="error">❌ ${data.error}</span>`;
+      return;
+    }
+
+    let html = `<h3>Total Candidates: ${data.total_candidates}</h3>`;
+
+    data.results.forEach(candidate => {
+      const matchedSkills = candidate.skills_matched || [];
+      const parsedSkills = candidate.parsed_skills || [];
+
+      html += `
+        <div class="candidate ${candidate.candidate_name === data.best_match?.candidate_name ? 'best' : ''}">
+          <strong>Candidate:</strong> ${candidate.candidate_name || "Unknown"}<br/>
+          <strong>Match Score:</strong> ${candidate.match_score ?? "N/A"}%<br/>
+          <strong>Matched Skills:</strong> ${matchedSkills.join(", ") || "None"}<br/>
+          <strong>Extracted Skills:</strong> ${parsedSkills.join(", ") || "None"}
+        </div>
+      `;
+    });
+
+    if (data.best_match) {
+      const bestMatchedSkills = data.best_match.skills_matched || [];
+      html += `
+        <div class="section-title">🏆 Best Match</div>
+        <div class="candidate best">
+          <strong>${data.best_match.candidate_name}</strong><br/>
+          Match Score: ${data.best_match.match_score ?? "N/A"}%<br/>
+          Matched Skills: ${bestMatchedSkills.join(", ") || "None"}
+        </div>
+      `;
+    }
+
+    html += `<em>${data.message}</em>`;
+    resultDiv.innerHTML = html;
+
+  } catch (err) {
+    console.error(err);
+    resultDiv.innerHTML = `<span class="error">❌ Error processing resumes. Check console for details.</span>`;
+  }
+});
+
   </script>
 </body>
 </html>

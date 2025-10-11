@@ -11,7 +11,7 @@ import pdfplumber
 
 app = FastAPI()
 
-# Enable CORS
+# ---------------- Enable CORS ----------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,7 +19,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------- PDF text extraction ----------------
+# ---------------- Extract text from PDF ----------------
 def extract_text_from_upload(file):
     text = ""
     file.seek(0)
@@ -41,7 +41,10 @@ def build_job_text(job_data):
 
 # ---------------- Skills matched ----------------
 def get_skills_matched(resume_skills, job_skills):
-    return [skill for skill in job_skills if skill in resume_skills]
+    resume_skills = [s.strip().lower() for s in resume_skills]
+    job_skills = [s.strip().lower() for s in job_skills]
+    matched = [skill for skill in job_skills if skill in resume_skills]
+    return matched
 
 # ---------------- Boost TF-IDF skill weights ----------------
 def boost_skill_weights(vectorizer: TfidfVectorizer, vectors: csr_matrix, skills: list, factor: float = 5.0):
@@ -54,53 +57,79 @@ def boost_skill_weights(vectorizer: TfidfVectorizer, vectors: csr_matrix, skills
         vectors = vectors.tocsr()
     return vectors
 
-# ---------------- Endpoint ----------------
-@app.post("/match_resume_job")
-async def match_resume_job(
-    resume: UploadFile = File(...),
+
+# ---------------- Endpoint for multiple resumes ----------------
+@app.post("/match_resumes_job")
+async def match_resumes_job(
+    resumes: list[UploadFile] = File(...),
     skills: str = Form(...),
     experience: str = Form(""),
     education: str = Form(""),
     salary: str = Form("")
 ):
-    # 1️⃣ Parse resume and get structured data
-    parsed_resume = parse_resume(resume.file)
-
-    # 2️⃣ Extract full text from PDF for TF-IDF
-    resume_text = extract_text_from_upload(resume.file)
-
-    # 3️⃣ Parse manual job inputs
+    # 1️⃣ Parse job data
     job_data = parse_job_post(skills=skills, experience=experience, salary=salary, education=education)
     job_text = build_job_text(job_data)
 
-    # 4️⃣ Compute TF-IDF similarity
-    vectorizer = TfidfVectorizer(stop_words="english")
-    vectors = vectorizer.fit_transform([resume_text, job_text])
-    vectors = boost_skill_weights(vectorizer, vectors, skills=job_data.get("skills", []), factor=5.0)
-    score = cosine_similarity(vectors[0], vectors[1])[0][0]
+    results = []
 
-    # 5️⃣ Identify skills matched
-    skills_matched = get_skills_matched(parsed_resume["parsed_skills"], job_data.get("skills", []))
+    # 2️⃣ Process each resume
+    for resume in resumes:
+        try:
+            # Parse resume structure
+            parsed_resume = parse_resume(resume.file)
 
-    # 6️⃣ Store resume in MongoDB
-    resume.file.seek(0)
-    resume_bytes = resume.file.read()
-    resume_doc = {
-        "filename": resume.filename,
-        "parsed_skills": parsed_resume["parsed_skills"],
-        "parsed_education": parsed_resume["parsed_education"],
-        "parsed_experience": parsed_resume["parsed_experience"],
-        "parsed_salary": parsed_resume["parsed_salary"],
-        "job_inputs": job_data,
-        "file_data": resume_bytes
-    }
-    resumes_collection.insert_one(resume_doc)
+            # Extract full text
+            resume_text = extract_text_from_upload(resume.file)
 
-    # 7️⃣ Return results
+            # Compute TF-IDF
+            vectorizer = TfidfVectorizer(stop_words="english")
+            vectors = vectorizer.fit_transform([resume_text, job_text])
+            vectors = boost_skill_weights(vectorizer, vectors, skills=job_data.get("skills", []), factor=5.0)
+            score = cosine_similarity(vectors[0], vectors[1])[0][0]
+
+            # Identify skills matched
+            skills_matched = get_skills_matched(parsed_resume["parsed_skills"], job_data.get("skills", []))
+
+            # Store in MongoDB
+            resume.file.seek(0)
+            resume_bytes = resume.file.read()
+            resumes_collection.insert_one({
+                "filename": resume.filename,
+                "parsed_skills": parsed_resume["parsed_skills"],
+                "parsed_education": parsed_resume["parsed_education"],
+                "parsed_experience": parsed_resume["parsed_experience"],
+                "parsed_salary": parsed_resume["parsed_salary"],
+                "job_inputs": job_data,
+                "file_data": resume_bytes
+            })
+
+            # Append to result
+            results.append({
+            "candidate_name": resume.filename.replace(".pdf", ""),
+            "match_score": round(score * 100, 2),
+            "skills_matched": skills_matched,
+            "parsed_skills": parsed_resume.get("parsed_skills", []),
+            "parsed_education": parsed_resume.get("parsed_education", []),
+            "parsed_experience": parsed_resume.get("parsed_experience", ""),
+            "parsed_salary": parsed_resume.get("parsed_salary", "")
+        })
+
+
+        except Exception as e:
+            results.append({
+                "candidate_name": resume.filename,
+                "match_score": 0,
+                "skills_matched": [],
+                "error": str(e)
+            })
+
+    # 3️⃣ Find best match
+    best_match = max(results, key=lambda x: x["match_score"]) if results else None
+
     return {
-        "match_score": round(score * 100, 2),
-        "skills_matched": skills_matched,
-        "parsed_skills": parsed_resume["parsed_skills"],
-        "parsed_education": parsed_resume["parsed_education"],
-        "message": "Resume stored in database successfully"
+        "total_candidates": len(results),
+        "results": results,
+        "best_match": best_match,
+        "message": "All resumes processed and stored successfully"
     }
