@@ -118,11 +118,15 @@ async def match_resumes_job(
 
         except Exception as e:
             results.append({
-                "candidate_name": resume.filename,
-                "match_score": 0,
-                "skills_matched": [],
-                "error": str(e)
-            })
+            "candidate_name": resume.filename.replace(".pdf", ""),
+            "match_score": round(score * 100, 2),
+            "skills_matched": skills_matched,
+            "extracted_skills": parsed_resume.get("parsed_skills", []),
+            "education": ", ".join(parsed_resume.get("parsed_education", [])) if parsed_resume.get("parsed_education") else "Not specified",
+            "experience": parsed_resume.get("parsed_experience", ""),
+            "expected_salary": parsed_resume.get("parsed_salary", "")
+        })
+
 
     # 3️⃣ Find best match
     best_match = max(results, key=lambda x: x["match_score"]) if results else None
