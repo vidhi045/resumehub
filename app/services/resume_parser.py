@@ -1,16 +1,10 @@
 # app/resume_parser.py
 import pdfplumber
 import re
+import spacy
 
-# Define known skills
-SKILLS = [
-    "Python", "Java", "JavaScript", "SQL", "HTML", "CSS", "React", "Node.js",
-    "AI", "Machine Learning", "Deep Learning", "Data Science", "MongoDB",
-    "Django", "Flask", "C++", "C#", "AWS", "Docker"
-]
-
-# Education keywords (case-insensitive)
-EDUCATION_KEYWORDS = ["B.Tech", "M.Tech", "Bachelor", "Master", "MBA", "PhD"]
+# Load spaCy model
+nlp = spacy.load("en_core_web_sm")
 
 # Regex patterns
 EXPERIENCE_REGEX = re.compile(r"(\d+(\.\d+)?)\s*(years?|yrs?|months?|mos?)", re.I)
@@ -29,37 +23,98 @@ def extract_text_from_pdf(file):
                 text += page_text + "\n"
     return text
 
-# ----------------- Extract skills -----------------
+# ----------------- Extract skills from Required Skills section -----------------
 def extract_skills(text):
-    found_skills = []
-    for skill in SKILLS:
-        if re.search(r"\b" + re.escape(skill) + r"\b", text, re.I):
-            found_skills.append(skill)
-    return found_skills
+    """
+    Extract only technical skills from the 'Required Skills' section using spaCy.
+    Stops before the next section heading.
+    Handles variations like 'Required Skills:', 'Required Skills & Tools:', 'Requirements:'
+    """
+    # 1️⃣ Extract Required Skills section (handles different headers)
+    skills_section_pattern = r"(Required Skills(?: & Tools)?|Requirements)\s*[:\-]?\s*(.*?)(?=\n[A-Z][A-Za-z\s&]*\n|\Z)"
+    match = re.search(skills_section_pattern, text, re.S | re.I)
+    skills_section = match.group(2) if match else text
+
+    doc = nlp(skills_section)
+    skills = set()
+
+    # 2️⃣ Named Entities (tools, libraries, frameworks)
+    for ent in doc.ents:
+        if ent.label_ in ["ORG", "PRODUCT", "LANGUAGE", "WORK_OF_ART"]:
+            skills.add(ent.text.strip())
+
+    # 3️⃣ Noun chunks (multi-word skills)
+    for chunk in doc.noun_chunks:
+        chunk_text = chunk.text.strip()
+        if len(chunk_text) > 1 and chunk_text.lower() not in {
+            "understanding", "knowledge", "skills", "problem-solving", "foundation",
+            "experience", "familiarity", "good", "basic"
+        }:
+            skills.add(chunk_text)
+
+    # 4️⃣ Phrases inside parentheses (Regression, Classification, etc.)
+    for match in re.findall(r'\((.*?)\)', skills_section):
+        for term in match.split(','):
+            term = term.strip()
+            if len(term) > 1:
+                skills.add(term)
+
+    # 5️⃣ Slash-separated terms (TensorFlow / Keras / PyTorch)
+    for match in re.findall(r'\b([A-Za-z\-]+(?: / [A-Za-z\-.]+)+)\b', skills_section):
+        for term in match.split('/'):
+            term = term.strip()
+            if len(term) > 1:
+                skills.add(term)
+
+    # 6️⃣ Return sorted list
+    return sorted(skills)
 
 # ----------------- Extract education -----------------
 def extract_education(text):
-    found_edu = []
-    for keyword in EDUCATION_KEYWORDS:
-        matches = re.findall(keyword, text, re.I)
-        found_edu.extend(matches)
-    return list(set(found_edu))  # remove duplicates
+    """
+    Dynamically detect education-related qualifications and institutions
+    """
+    degree_pattern = r"(B\.?Tech|M\.?Tech|Bachelor|Master|MBA|Ph\.?D)"
+    institute_pattern = r"(University|College|Institute|School of [A-Za-z]+)"
+
+    degrees = re.findall(degree_pattern, text, re.I)
+    institutes = re.findall(institute_pattern, text, re.I)
+
+    return {
+        "degrees": list(set(degrees)),
+        "institutes": list(set(institutes))
+    }
 
 # ----------------- Extract experience -----------------
 def extract_experience(text):
+    """
+    Extract years/months of experience
+    """
     matches = EXPERIENCE_REGEX.findall(text)
-    experience_list = []
-    for match in matches:
-        experience_list.append(match[0] + " " + match[2])  # e.g., "2 years"
+    experience_list = [match[0] + " " + match[2] for match in matches]
     return experience_list
 
 # ----------------- Extract salary expectations -----------------
 def extract_salary_expectations(text):
+    """
+    Extract salary figures
+    """
     matches = SALARY_REGEX.findall(text)
-    salary_list = []
-    for match in matches:
-        salary_list.append("".join(match))  # e.g., "₹5,00,000"
+    salary_list = ["".join(match) for match in matches]
     return salary_list
+
+# ----------------- Parse job post -----------------
+def parse_job_post(skills, experience, salary, education):
+    # Dynamically clean and extract data
+    job_skills = [s.strip() for s in skills.split(",") if s.strip()]
+    job_education = re.findall(r"(B\.?Tech|M\.?Tech|Bachelor|Master|MBA|PhD)", education, flags=re.I)
+
+    return {
+        "skills": job_skills,
+        "experience": experience.strip(),
+        "education": job_education,
+        "salary": salary.strip(),
+    }
 
 # ----------------- Parse resume -----------------
 def parse_resume(file):

@@ -8,6 +8,9 @@ from app.services.resume_parser import parse_resume
 from app.services.job_parser import parse_job_post
 from app.database import resumes_collection
 import pdfplumber
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
 

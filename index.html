@@ -123,87 +123,105 @@
     <div class="result" id="result"></div>
   </div>
 
-  <script>
-  document.getElementById("matchForm").addEventListener("submit", async function (e) {
-    e.preventDefault();
-    const resultDiv = document.getElementById("result");
-    resultDiv.innerHTML = "⏳ Processing multiple resumes... Please wait.";
+ <script>
+document.getElementById("matchForm").addEventListener("submit", async function (e) {
+  e.preventDefault();
+  const resultDiv = document.getElementById("result");
+  resultDiv.innerHTML = "⏳ Processing multiple resumes... Please wait.";
 
-    try {
-      const formData = new FormData();
-      const resumes = document.getElementById("resumeUpload").files;
+  try {
+    const formData = new FormData();
+    const resumes = document.getElementById("resumeUpload").files;
 
-      if (resumes.length === 0) {
-        resultDiv.innerHTML = `<span class="error">Please upload at least one resume.</span>`;
-        return;
-      }
-
-      for (const file of resumes) {
-        formData.append("resumes", file);
-      }
-
-      formData.append("skills", document.getElementById("skills").value);
-      formData.append("experience", document.getElementById("experience").value);
-      formData.append("salary", document.getElementById("salary").value);
-      formData.append("education", document.getElementById("education").value);
-
-      const res = await fetch("http://127.0.0.1:8000/match_resumes_job", {
-        method: "POST",
-        body: formData
-      });
-
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
-      const data = await res.json();
-
-      if (data.error) {
-        resultDiv.innerHTML = `<span class="error">❌ ${data.error}</span>`;
-        return;
-      }
-
-      let html = `<h3>Total Candidates: ${data.total_candidates}</h3>`;
-
-      data.results.forEach(candidate => {
-        const matchedSkills = candidate.skills_matched || [];
-        const parsedSkills = candidate.parsed_skills || [];
-        const parsedEducation = candidate.parsed_education || [];
-        const parsedExperience = candidate.parsed_experience || "Not specified";
-
-        html += `
-          <div class="candidate ${candidate.candidate_name === data.best_match?.candidate_name ? 'best' : ''}">
-            <strong>Candidate:</strong> ${candidate.candidate_name || "Unknown"}<br/>
-            <strong>Match Score:</strong> ${candidate.match_score ?? "N/A"}%<br/>
-            <strong>Matched Skills:</strong> ${matchedSkills.join(", ") || "None"}<br/>
-            <strong>Extracted Skills:</strong> ${parsedSkills.join(", ") || "None"}<br/>
-            <strong>Parsed Education:</strong> ${parsedEducation.join(", ") || "Not specified"}<br/>
-            <strong>Parsed Experience:</strong> ${parsedExperience || "Not specified"}<br/>
-          </div>
-        `;
-      });
-
-      if (data.best_match) {
-        const bestMatchedSkills = data.best_match.skills_matched || [];
-        const bestEdu = data.best_match.parsed_education?.join(", ") || "Not specified";
-        const bestExp = data.best_match.parsed_experience || "Not specified";
-        html += `
-          <div class="section-title">🏆 Best Match</div>
-          <div class="candidate best">
-            <strong>${data.best_match.candidate_name}</strong><br/>
-            Match Score: ${data.best_match.match_score ?? "N/A"}%<br/>
-            Matched Skills: ${bestMatchedSkills.join(", ") || "None"}<br/>
-            Parsed Education: ${bestEdu}<br/>
-            Parsed Experience: ${bestExp}
-          </div>
-        `;
-      }
-
-      html += `<em>${data.message}</em>`;
-      resultDiv.innerHTML = html;
-
-    } catch (err) {
-      console.error(err);
-      resultDiv.innerHTML = `<span class="error">❌ Error processing resumes. Check console for details.</span>`;
+    if (resumes.length === 0) {
+      resultDiv.innerHTML = `<span class="error">Please upload at least one resume.</span>`;
+      return;
     }
-  });
+
+    for (const file of resumes) {
+      formData.append("resumes", file);
+    }
+
+    formData.append("skills", document.getElementById("skills").value);
+    formData.append("experience", document.getElementById("experience").value);
+    formData.append("salary", document.getElementById("salary").value);
+    formData.append("education", document.getElementById("education").value);
+
+    const res = await fetch("http://127.0.0.1:8000/match_resumes_job", {
+      method: "POST",
+      body: formData
+    });
+
+    if (!res.ok) throw new Error(`Server error: ${res.status}`);
+    const data = await res.json();
+
+    if (data.error) {
+      resultDiv.innerHTML = `<span class="error">❌ ${data.error}</span>`;
+      return;
+    }
+
+    let html = `<h3>Total Candidates: ${data.total_candidates}</h3>`;
+
+    data.results.forEach(candidate => {
+      const matchedSkills = candidate.skills_matched || [];
+      const parsedSkills = candidate.parsed_skills || [];
+
+      // Flatten education object
+      const parsedEducationObj = candidate.parsed_education || {};
+      const parsedEducationArray = [
+        ...(parsedEducationObj.degrees || []),
+        ...(parsedEducationObj.institutes || [])
+      ];
+
+      const parsedExperience = candidate.parsed_experience || "Not specified";
+      const matchScore = candidate.match_score !== undefined
+        ? (candidate.match_score).toFixed(2) + "%"
+        : "N/A";
+
+      html += `
+        <div class="candidate ${candidate.candidate_name === data.best_match?.candidate_name ? 'best' : ''}">
+          <strong>Candidate:</strong> ${candidate.candidate_name || "Unknown"}<br/>
+          <strong>Match Score:</strong> ${matchScore}<br/>
+          <strong>Matched Skills:</strong> ${matchedSkills.join(", ") || "None"}<br/>
+          <strong>Parsed Education:</strong> ${parsedEducationArray.join(", ") || "Not specified"}<br/>
+          <strong>Parsed Experience:</strong> ${parsedExperience}<br/>
+        </div>
+      `;
+    });
+
+    if (data.best_match) {
+      const best = data.best_match;
+      const bestMatchedSkills = best.skills_matched || [];
+      const bestParsedSkills = best.parsed_skills || [];
+
+      const bestEduObj = best.parsed_education || {};
+      const bestEduArray = [...(bestEduObj.degrees || []), ...(bestEduObj.institutes || [])];
+      const bestExp = best.parsed_experience || "Not specified";
+      const bestScore = best.match_score !== undefined
+        ? (best.match_score) + "%"
+        : "N/A";
+
+      html += `
+        <div class="section-title">🏆 Best Match</div>
+        <div class="candidate best">
+          <strong>${best.candidate_name}</strong><br/>
+          Match Score: ${bestScore}<br/>
+          Matched Skills: ${bestMatchedSkills.join(", ") || "None"}<br/>
+          Extracted Skills: ${bestParsedSkills.join(", ") || "None"}<br/>
+          Parsed Education: ${bestEduArray.join(", ") || "Not specified"}<br/>
+          Parsed Experience: ${bestExp}
+        </div>
+      `;
+    }
+
+    html += `<em>${data.message || ""}</em>`;
+    resultDiv.innerHTML = html;
+
+  } catch (err) {
+    console.error(err);
+    resultDiv.innerHTML = `<span class="error">❌ Error processing resumes. Check console for details.</span>`;
+  }
+});
 </script>
 
 </body>

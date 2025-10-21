@@ -1,15 +1,16 @@
 import re
-from app.services.resume_parser import SKILLS, EDUCATION_KEYWORDS
 
+# Regex patterns
 EXPERIENCE_REGEX = re.compile(r"(\d+(\.\d+)?)\s*(years?|yrs?|months?|mos?)", re.I)
 SALARY_REGEX = re.compile(r"(₹|\$)\s*\d+(,\d{3})*(\.\d+)?", re.I)
+# Education keywords can be dynamically searched
+EDUCATION_KEYWORDS = ["B.Tech", "M.Tech", "Bachelor", "Master", "MBA", "PhD"]
 EDUCATION_REGEX = re.compile(r"\b(" + "|".join(EDUCATION_KEYWORDS) + r")\b", re.I)
 
 def extract_job_skills(skills_input: str):
-    """Split comma-separated skills and validate against known SKILLS list."""
+    """Split comma-separated skills."""
     skills = [s.strip() for s in skills_input.split(",") if s.strip()]
-    validated = [s for s in skills if any(re.fullmatch(skill, s, re.I) for skill in SKILLS)]
-    return validated
+    return skills  # no validation needed now
 
 def extract_job_experience(exp_input: str):
     match = EXPERIENCE_REGEX.findall(exp_input)
